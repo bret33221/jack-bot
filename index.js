@@ -170,4 +170,12 @@ const server = http.createServer((req, res) => res.end('ok'));
 server.listen(process.env.PORT || 3000, () => console.log('HTTP server up'));
 server.on('error', (e) => console.error('HTTP error:', e.message));
 
+const renderUrl = process.env.RENDER_EXTERNAL_URL;
+if (renderUrl) {
+  setInterval(() => {
+    fetch(renderUrl).catch(() => {});
+  }, 5 * 60 * 1000);
+  console.log('Keepalive enabled');
+}
+
 client.login(process.env.DISCORD_TOKEN);
