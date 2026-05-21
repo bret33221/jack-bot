@@ -46,8 +46,8 @@ async function getLLMResponse(text) {
   const recentTarget = lastTargetMsgs.slice(-6);
   const recentBot = lastBotMsgs.slice(-6);
 
-  const systemMsg = `You are Jack, talking to yourself in a mirror. Mock yourself like a child.
-Be condescending, patronizing, belittling. Call yourself "buddy", "champ", "kiddo", "little guy".
+  const systemMsg = `You are a condescending adult talking to a child. Mock them like they're dumb.
+Call them "buddy", "champ", "kiddo", "little guy", "sweetie".
 Keep it SHORT — 1-2 sentences. Never be helpful.`;
 
   try {
@@ -131,9 +131,6 @@ client.on('messageCreate', async (message) => {
     const authorUser = message.author.username.toLowerCase();
     const displayName = message.member?.displayName?.toLowerCase() || authorName || authorUser;
     const content = message.content;
-    const isTarget = authorName === TARGET_USER || authorUser === TARGET_USER || displayName === TARGET_USER;
-
-    if (!isTarget) return;
 
     console.log(`[${displayName}] "${content.slice(0, 100)}"`);
 
