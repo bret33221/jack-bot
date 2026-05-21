@@ -1,13 +1,9 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
-const say = require('say');
-const ffmpegStatic = require('ffmpeg-static');
+const http = require('http');
 const OpenAI = require('openai');
 require('dotenv').config();
-
-process.env.FFMPEG_PATH = ffmpegStatic;
 
 const TARGET_USER = process.env.TARGET_USER?.toLowerCase();
 const MEMORY_FILE = path.join(__dirname, 'jack_memory.json');
@@ -24,23 +20,17 @@ if (fs.existsSync(MEMORY_FILE)) {
 }
 
 function saveMemory() {
-  fs.writeFileSync(MEMORY_FILE, JSON.stringify(memory, null, 2));
+  if (memory.messages.length > 200) memory.messages = memory.messages.slice(-100);
+  try { fs.writeFileSync(MEMORY_FILE, JSON.stringify(memory, null, 2)); } catch (e) {}
 }
-
-
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
   ],
 });
-
-let voiceConnection = null;
-let audioPlayer = createAudioPlayer();
-let currentVoiceChannel = null;
 
 let lastBotMsgs = [];
 let lastTargetMsgs = [];
@@ -50,36 +40,6 @@ function isRepeatingBot(text) {
   return lastBotMsgs.some(botMsg =>
     botMsg.toLowerCase().includes(lower) || lower.includes(botMsg.toLowerCase().slice(0, 15))
   );
-}
-
-async function speakText(text) {
-  if (!voiceConnection || voiceConnection.state.status !== VoiceConnectionStatus.Ready) return;
-
-  const filePath = path.join(__dirname, `tts_${Date.now()}.wav`);
-  const clean = text.replace(/["*_`\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!clean) return;
-
-  return new Promise((resolve) => {
-    say.export(clean, 'Microsoft David Desktop', 1, filePath, async (err) => {
-      if (err) { resolve(); return; }
-      try {
-        const resource = createAudioResource(filePath);
-        audioPlayer.play(resource);
-        voiceConnection.subscribe(audioPlayer);
-        audioPlayer.once(AudioPlayerStatus.Idle, () => {
-          try { fs.unlinkSync(filePath); } catch (e) {}
-          resolve();
-        });
-        setTimeout(() => {
-          try { fs.unlinkSync(filePath); } catch (e) {}
-          resolve();
-        }, 10000);
-      } catch (e) {
-        try { fs.unlinkSync(filePath); } catch (e) {}
-        resolve();
-      }
-    });
-  });
 }
 
 async function getLLMResponse(text) {
@@ -109,8 +69,7 @@ Keep it SHORT — 1-2 sentences. Never be helpful.`;
       temperature: 0.8,
     });
 
-    const response = result.choices[0]?.message?.content?.trim();
-    return response || null;
+    return result.choices[0]?.message?.content?.trim() || null;
   } catch (e) {
     console.error('Groq:', e.message?.slice(0, 100) || e);
     return null;
@@ -129,7 +88,6 @@ function getFallback(text) {
     return roasts[Math.floor(Math.random() * roasts.length)];
   }
 
-  const words = text.split(/\s+/).filter(w => w.length > 0).length;
   if (text.length <= 2) {
     return [
       "Use your words, kiddo.",
@@ -175,20 +133,11 @@ client.on('messageCreate', async (message) => {
     const content = message.content;
     const isTarget = authorName === TARGET_USER || authorUser === TARGET_USER || displayName === TARGET_USER;
 
-    if (content === '!leave' && voiceConnection) {
-      voiceConnection.destroy();
-      voiceConnection = null;
-      currentVoiceChannel = null;
-      await message.reply('Left.');
-      return;
-    }
-
     if (!isTarget) return;
 
     console.log(`[${displayName}] "${content.slice(0, 100)}"`);
 
     memory.messages.push({ content, timestamp: Date.now() });
-    if (memory.messages.length > 200) memory.messages = memory.messages.slice(-100);
     saveMemory();
 
     lastTargetMsgs.push(content);
@@ -206,7 +155,6 @@ client.on('messageCreate', async (message) => {
 
     console.log(`>>> ${response.slice(0, 100)}`);
     await message.reply(response).catch(() => {});
-    await speakText(response).catch(() => {});
   } catch (e) {
     console.error('Error:', e.message);
   }
@@ -216,25 +164,7 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   console.log(`Target: "${TARGET_USER}" | Memory: ${memory.messages.length} msgs`);
   console.log(`Guilds: ${client.guilds.cache.map(g => g.name).join(', ') || 'none'}`);
-
-  const guild = client.guilds.cache.first();
-  if (guild) {
-    const channel = guild.channels.cache.find(c => c.type === 2 && c.name.toLowerCase().includes('general'));
-    if (channel) {
-      currentVoiceChannel = channel;
-      voiceConnection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: guild.id,
-        adapterCreator: guild.voiceAdapterCreator,
-      });
-      audioPlayer = createAudioPlayer();
-      voiceConnection.subscribe(audioPlayer);
-      console.log(`Joined voice: ${channel.name}`);
-    }
-  }
 });
 
-const http = require('http');
 http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);
-
 client.login(process.env.DISCORD_TOKEN);
