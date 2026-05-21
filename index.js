@@ -163,5 +163,11 @@ client.once('ready', () => {
   console.log(`Guilds: ${client.guilds.cache.map(g => g.name).join(', ') || 'none'}`);
 });
 
-http.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);
+process.on('unhandledRejection', (e) => console.error('Unhandled:', e.message));
+client.on('error', (e) => console.error('Client error:', e.message));
+
+const server = http.createServer((req, res) => res.end('ok'));
+server.listen(process.env.PORT || 3000, () => console.log('HTTP server up'));
+server.on('error', (e) => console.error('HTTP error:', e.message));
+
 client.login(process.env.DISCORD_TOKEN);
